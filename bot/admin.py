@@ -5,9 +5,10 @@ from .models import TgUser, Phone, Task
 
 
 class UserAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user_username', 'user_first_name')
+    list_display = ('user_id', 'user_username', 'user_first_name')
     list_display_links = ('user_username',)
     search_fields = ('user_username',)
+
 
 admin.site.register(TgUser, UserAdmin)
 
@@ -15,6 +16,7 @@ admin.site.register(TgUser, UserAdmin)
 class PhoneAdmin(admin.ModelAdmin):
     list_display = ('user', 'phone_number')
     list_display_links = ('user',)
+
 
 admin.site.register(Phone, PhoneAdmin)
 
@@ -28,6 +30,5 @@ class TaskAdmin(admin.ModelAdmin):
         else:
             return "No photo"
 
+
 admin.site.register(Task, TaskAdmin)
-
-

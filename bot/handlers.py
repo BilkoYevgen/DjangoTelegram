@@ -23,11 +23,11 @@ class User:
 
 class TelegramHandler:
     user = None
+    state = None
+    state_user_id = None
 
     def __init__(self, data):
-        pprint(data)
         json_data = json.loads(data)
-        pprint(json_data)
 
         data = {}
         if json_data.get('message') is not None:
@@ -46,16 +46,23 @@ class TelegramHandler:
         if self.text == "list_phone":
             self.list_phone()
         elif self.text == "add_phone":
-            self.add_phone()
+            TelegramHandler.state = 'name'
+            TelegramHandler.state_user_id = self.user.id
+            self.print_add_name()
+        elif TelegramHandler.state == "phone":
+            self.print_add_phone()
         elif self.text == "del_phone":
-            self.del_phone()
+            TelegramHandler.state = 'delete'
+            TelegramHandler.state_user_id = self.user.id
+            self.print_del_phone()
         elif self.text == "mistake":
             self.send_message("Biggest mistake in your life")
         elif self.text == "task_yes":
             self.send_message("Great! You can upload it now!")
-            # Task.objects.create(photo=self.photo, user__user_id=self.user.id)
         elif self.text == "task_no":
             self.send_message("Ok. When do you want to do your task?")
+        elif self.text == "go_back":
+            self.start_message_and_keyboard()
 
     def send_message(self, text):
         data = {
@@ -66,17 +73,43 @@ class TelegramHandler:
         requests.post(f'{TG_BASE_URL}{os.getenv("BOT_TOKEN")}/sendMessage', json=data)
 
     def on_message(self):
+        if TelegramHandler.state == 'weather' and TelegramHandler.state_user_id == self.user.id:
+            self.weather_handler()
+            TelegramHandler.state = None
+            return
+
+        if TelegramHandler.state == 'name' and TelegramHandler.state_user_id == self.user.id:
+            self.add_name()
+
+        if TelegramHandler.state == 'phone' and TelegramHandler.state_user_id == self.user.id:
+            self.add_phone()
+            TelegramHandler.state = None
+            return
+
+        if TelegramHandler.state == 'delete' and TelegramHandler.state_user_id == self.user.id:
+            self.del_phone()
+            TelegramHandler.state = None
+            return
+
+        if TelegramHandler.state == 'task' and TelegramHandler.state_user_id == self.user.id:
+            self.task_handler()
+            TelegramHandler.state = None
+            return
+
         if self.text == "/start":
             self.start_message_and_keyboard()
         elif self.text == "Weather" or self.text == "weather":
-            self.weather_handler()
+            TelegramHandler.state = 'weather'
+            TelegramHandler.state_user_id = self.user.id
+            self.print_weather_handler()
         elif self.text == "Landing page" or self.text == "landing page":
             self.show_landing()
         elif self.text == "Phonebook" or self.text == "phonebook":
             self.my_phonebook()
         elif self.text == "My tasks" or self.text == "my tasks":
-            # self.send_message("task")
-            self.task_handler()
+            TelegramHandler.state = 'task'
+            TelegramHandler.state_user_id = self.user.id
+            self.print_task_handler()
         elif self.text == "Exchange rate" or self.text == "exchange rate":
             self.currency_handler()
         else:
@@ -136,8 +169,10 @@ class TelegramHandler:
             print(ex)
             self.send_message("Something wrong(")
 
+    def print_weather_handler(self):
+        self.send_message("Please enter the city or country name:")
+
     def weather_handler(self):
-        self.send_message("Please enter the city or country name:")  # TODO: not working
         city_country = self.text
         res = requests.get(f"{GEO_URL}{city_country}")
         data = res.json()
@@ -169,6 +204,10 @@ class TelegramHandler:
                     [{
                         "text": "Delete contact",
                         "callback_data": "del_phone"
+                    }],
+                    [{
+                        "text": "Go Back",
+                        "callback_data": "go_back"
                     },
                     ]
                 ]
@@ -206,49 +245,112 @@ class TelegramHandler:
         numbered_contacts = [f"{index + 1}. {contact}" for index, contact in enumerate(contacts)]
         message = "\n\n".join(numbered_contacts)
         self.send_message(message)
+        self.my_phonebook()
+
+    def print_add_name(self):
+        self.send_message("Please enter NAME that you want to add:")
+
+    def add_name(self):
+        contact_name = self.text
+        name = Phone.objects.create(phone_name=contact_name, user_id=self.user.id)
+        self.send_message("Name added")
+        self.print_add_phone()
+        TelegramHandler.state = "phone"
+
+    def print_add_phone(self):
+        self.send_message("Please enter PHONE that you want to add:")
 
     def add_phone(self):
-        self.send_message("Please enter phone that you want to add:")
+        contact_phone = self.text
+        phone = Phone.objects.filter(phone_number=contact_phone).last()  # TODO: phone_number не  записывается
 
-    # def del_phone(self):
-    #     self.send_message("Here is a full list of your contacts:")
-    #     phone_list = Phone.objects.filter(user__user_id=self.user.id)
-    #     contacts = [f"Name: {phone.phone_name}" for phone in phone_list]
-    #     message = "\n\n".join(contacts)
-    #     self.send_message(message)
-    #
-    #     self.send_message("Enter name of contact to delete:")
-    #
-    #         #TODO: удалять по номеру или имени - user input + del_contact = Phone.objects.get(phone_name= ,
-    #
-    #     try:
-    #         del_contact = Phone.objects.get(phone_name= , user__user_id=self.user.id)
-    #         del_contact.delete()
-    #         self.send_message("Contact deleted!")
-    #     except Phone.DoesNotExist:
-    #         self.send_message("Contact not found!")
-    #
-    #     self.my_phonebook()
+    def print_del_phone(self):
+        self.send_message("Here is a full list of your contacts:")
+        phone_list = Phone.objects.filter(user__user_id=self.user.id)
+        contacts = [f"Name: {phone.phone_name}" for phone in phone_list]
+        numbered_contacts = [f"{index + 1}. {contact}" for index, contact in enumerate(contacts)]
+        message = "\n\n".join(numbered_contacts)
+        self.send_message(message)
+        self.send_message("Enter name of the contact to delete:\n"
+                          "Or just write 'quit' to go back")
+
+    def del_phone(self):
+        del_text = self.text
+        if del_text.lower() == "quit":
+            self.my_phonebook()
+            return
+
+        try:
+            del_contact = Phone.objects.get(phone_name=del_text, user__user_id=self.user.id)
+            del_contact.delete()
+            self.send_message("Contact deleted!")
+            self.send_message("Here is a UPDATED list of your contacts:")
+            phone_list = Phone.objects.filter(user__user_id=self.user.id)
+            contacts = [f"Name: {phone.phone_name}" for phone in phone_list]
+            numbered_contacts = [f"{index + 1}. {contact}" for index, contact in enumerate(contacts)]
+            message = "\n\n".join(numbered_contacts)
+            self.send_message(message)
+        except Phone.DoesNotExist:
+            self.send_message("Contact not found!")
+
+        self.my_phonebook()
+
+    def print_task_handler(self):
+        self.send_message("Here is a list of your tasks:")
+        my_tasks = Task.objects.filter(user__user_id=self.user.id)
+
+        if my_tasks.exists():
+            tasks = [f"{index + 1}. {task.task}" for index, task in enumerate(my_tasks)]
+            tasks_message = "\n\n".join(tasks)
+            self.send_message(tasks_message)
+        else:
+            self.send_message("You don't have any tasks")
+
+        self.send_message("Please add a task\n"
+                          "or enter 'quit' if you don't want to add a new task:")
 
     def task_handler(self):
-        self.send_message("Please enter what you need to do:")
-        # to_do = Task.objects.create(task= , user__user_id=self.user.id)
-        data = {
-            'chat_id': self.user.id,
-            'text': "Do you want to add any photo? I will send it to you with notification.",
-            "reply_markup": {
-                "inline_keyboard": [
-                    [
-                        {
-                            "text": "✅Yes",
-                            "callback_data": "task_yes"
-                        },
-                        {
-                            "text": "⛔No",
-                            "callback_data": "task_no"
-                        },
+        task_text = self.text
+        if task_text.lower() == 'quit':
+            self.send_message("Okay. What do you need now?")
+            self.start_message_and_keyboard()
+        else:
+            to_do = Task.objects.create(task=task_text, user_id=self.user.id)
+            data = {
+                'chat_id': self.user.id,
+                'text': "Do you want to add any photo? I will send it to you with notification.",
+                "reply_markup": {
+                    "inline_keyboard": [
+                        [
+                            {
+                                "text": "✅Yes",
+                                "callback_data": "task_yes"
+                            },
+                            {
+                                "text": "⛔No",
+                                "callback_data": "task_no"
+                            },
+                        ]
                     ]
-                ]
+                }
             }
-        }
-        requests.post(f'{TG_BASE_URL}{os.getenv("BOT_TOKEN")}/sendMessage', json=data)
+            requests.post(f'{TG_BASE_URL}{os.getenv("BOT_TOKEN")}/sendMessage', json=data)
+
+    # Add a callback handler for receiving the photo
+    def handle_photo(self, file_id):
+        # Get the file path using the file ID
+        file_response = requests.get(f'{TG_BASE_URL}{os.getenv("BOT_TOKEN")}/getFile?file_id={file_id}')
+        file_data = file_response.json()
+        if 'result' in file_data:
+            file_path = file_data['result']['file_path']
+            # Download the photo
+            download_url = f'{TG_BASE_URL}file/bot{os.getenv("BOT_TOKEN")}/{file_path}'
+            photo_response = requests.get(download_url)
+            if photo_response.status_code == 200:
+                # Save the photo to the database
+                photo_data = photo_response.content  # Store or process the photo data as needed
+                # Add the photo data to the corresponding task
+                to_do = Task.objects.get(user_id=self.user.id)
+                to_do.photo = photo_data
+                to_do.save()
+                self.send_message("Photo added successfully.")

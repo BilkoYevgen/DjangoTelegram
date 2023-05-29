@@ -1,7 +1,8 @@
 from django.db import models
 
+
 class TgUser(models.Model):
-    user_id = models.BigIntegerField()
+    user_id = models.BigIntegerField(primary_key=True)
     user_username = models.CharField(max_length=50, null=True)
     user_first_name = models.CharField(max_length=50, null=True)
     user_last_name = models.CharField(max_length=50, null=True)
@@ -26,5 +27,3 @@ class Task(models.Model):
 
     def __str__(self):
         return self.task
-
-
