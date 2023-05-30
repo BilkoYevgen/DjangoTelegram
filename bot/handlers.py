@@ -1,8 +1,11 @@
 import json, requests
 import os
-from django.http import HttpRequest, request
+from django.http import HttpRequest, HttpResponse
 from dotenv import load_dotenv
 from .models import *
+import schedule
+import time
+import datetime
 from pprint import pprint
 
 load_dotenv()
@@ -27,7 +30,9 @@ class TelegramHandler:
     state_user_id = None
 
     def __init__(self, data):
+        pprint(data)
         json_data = json.loads(data)
+        pprint(json_data)
 
         data = {}
         if json_data.get('message') is not None:
@@ -60,7 +65,7 @@ class TelegramHandler:
         elif self.text == "task_yes":
             self.send_message("Great! You can upload it now!")
         elif self.text == "task_no":
-            self.send_message("Ok. When do you want to do your task?")
+            self.print_time_handler()
         elif self.text == "go_back":
             self.start_message_and_keyboard()
 
@@ -80,6 +85,7 @@ class TelegramHandler:
 
         if TelegramHandler.state == 'name' and TelegramHandler.state_user_id == self.user.id:
             self.add_name()
+            return
 
         if TelegramHandler.state == 'phone' and TelegramHandler.state_user_id == self.user.id:
             self.add_phone()
@@ -187,6 +193,57 @@ class TelegramHandler:
         else:
             self.send_message("Sorry, I couldn't find results for this input, please try again.")
 
+    # def weather_handler(self, city_name):
+    #     params = {
+    #         'name': city_name
+    #     }
+    #     res = requests.get(f'{GEO_URL}', params=params)
+    #     if res.status_code != 200:
+    #         raise Exception('Error')
+    #     data = res.json()
+    #     if not data.get('results'):
+    #         raise Exception("Error1")
+    #     return data['results']
+    #
+    # def weather_buttons(self):
+    #     city = self.text
+    #     try:
+    #         geo_data = self.weather_handler(city)
+    #         buttons = []
+    #         for item in geo_data:
+    #             test_button = {
+    #                 'text': f'{item.get("name")} - {item.get("country_code")}',
+    #                 'callback_data': json.dumps({'lat': item.get('latitude'), 'lon': item.get('longitude')})
+    #             }
+    #             buttons.append([test_button])
+    #         markup = {
+    #             'inline_keyboard': buttons
+    #         }
+    #         self.send_weather("Please select a location:", markup)
+    #     except Exception:
+    #         self.send_message("Error2")
+    #
+    # def weather_callback_handler(self):
+    #     callback_data = self.text
+    #     data = json.loads(callback_data)
+    #     latitude = round(data['lat'], 2)
+    #     longitude = round(data['lon'], 2)
+    #     url_api = requests.get(
+    #         f"https://api.open-meteo.com/v1/forecast?latitude={latitude}&longitude={longitude}&hourly=temperature_2m&current_weather=true&past_days=1&forecast_days=1&timezone=auto")
+    #     data_api = url_api.json()
+    #     temperature = data_api['current_weather']['temperature']
+    #     location = data_api['current_weather']['place']['name']
+    #     self.send_message(f"The temperature in {location} is {temperature} degrees Celsius!")
+    #
+    # def send_weather(self, text, markup):
+    #     data = {
+    #         'chat_id': self.user.id,
+    #         'text': text,
+    #         "reply_markup": markup
+    #     }
+    #     requests.post(f'{TG_BASE_URL}{os.getenv("BOT_TOKEN")}/sendMessage', json=data)
+    # TODO: Это наброски функций погоды где есть кнопки выбора локации
+
     def my_phonebook(self):
         data = {
             'chat_id': self.user.id,
@@ -262,7 +319,28 @@ class TelegramHandler:
 
     def add_phone(self):
         contact_phone = self.text
-        phone = Phone.objects.filter(phone_number=contact_phone).last()  # TODO: phone_number не  записывается
+
+        if Phone.objects.filter(phone_number=contact_phone).exists():
+            self.send_message("Contact with this phone number already exists.")
+            del_name = Phone.objects.last()
+            del_name.delete()
+            self.my_phonebook()
+            return
+
+        phone = Phone(phone_number=contact_phone, user_id=self.user.id)
+        phone.save()
+
+        self.send_message("Contact added successfully")
+        self.send_message("Here is an updated list of your contacts:")
+
+        phone_list = Phone.objects.filter(user_id=self.user.id)
+        contacts = [f"Name: {phone.phone_name}\nPhone: {phone.phone_number}" for phone in phone_list]
+        numbered_contacts = [f"{index + 1}. {contact}" for index, contact in enumerate(contacts)]
+        message = "\n\n".join(numbered_contacts)
+        self.send_message(message)
+
+        self.my_phonebook()
+        return
 
     def print_del_phone(self):
         self.send_message("Here is a full list of your contacts:")
@@ -336,21 +414,30 @@ class TelegramHandler:
             }
             requests.post(f'{TG_BASE_URL}{os.getenv("BOT_TOKEN")}/sendMessage', json=data)
 
-    # Add a callback handler for receiving the photo
-    def handle_photo(self, file_id):
-        # Get the file path using the file ID
-        file_response = requests.get(f'{TG_BASE_URL}{os.getenv("BOT_TOKEN")}/getFile?file_id={file_id}')
-        file_data = file_response.json()
-        if 'result' in file_data:
-            file_path = file_data['result']['file_path']
-            # Download the photo
-            download_url = f'{TG_BASE_URL}file/bot{os.getenv("BOT_TOKEN")}/{file_path}'
-            photo_response = requests.get(download_url)
-            if photo_response.status_code == 200:
-                # Save the photo to the database
-                photo_data = photo_response.content  # Store or process the photo data as needed
-                # Add the photo data to the corresponding task
-                to_do = Task.objects.get(user_id=self.user.id)
-                to_do.photo = photo_data
-                to_do.save()
-                self.send_message("Photo added successfully.")
+    def print_time_handler(self):
+        data = {
+            'chat_id': self.user.id,
+            'text': "Please choose date:",
+            "reply_markup": {
+                "inline_keyboard": [
+                    [
+                        {
+                            "text": "Today",
+                            "callback_data": "today"
+                        },
+                        {
+                            "text": "Tomorrow",
+                            "callback_data": "tomorrow"
+                        },
+                        {
+                            "text": "Other day",
+                            "callback_data": "other_day"
+                        },
+                    ]
+                ]
+            }
+        }
+        requests.post(f'{TG_BASE_URL}{os.getenv("BOT_TOKEN")}/sendMessage', json=data)
+
+    def time_handler(self):
+        pass
