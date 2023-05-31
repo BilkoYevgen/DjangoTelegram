@@ -46,6 +46,7 @@ class TelegramHandler:
             self.user = User(**data.get('from'))
             self.text = data.get('data')
             self.on_callback()
+            self.time_handler()
 
     def on_callback(self):
         if self.text == "list_phone":
@@ -390,7 +391,6 @@ class TelegramHandler:
     def task_handler(self):
         task_text = self.text
         if task_text.lower() == 'quit':
-            self.send_message("Okay. What do you need now?")
             self.start_message_and_keyboard()
         else:
             to_do = Task.objects.create(task=task_text, user_id=self.user.id)
@@ -413,6 +413,7 @@ class TelegramHandler:
                 }
             }
             requests.post(f'{TG_BASE_URL}{os.getenv("BOT_TOKEN")}/sendMessage', json=data)
+            # TODO: разобраться с обработкой фото
 
     def print_time_handler(self):
         data = {
@@ -440,4 +441,18 @@ class TelegramHandler:
         requests.post(f'{TG_BASE_URL}{os.getenv("BOT_TOKEN")}/sendMessage', json=data)
 
     def time_handler(self):
-        pass
+        if self.text == "today":
+            pass
+        if self.text == "tomorrow":
+            pass
+        if self.text == "other_day":
+            pass
+
+    # def job(self):
+    #     self.send_message("hi")
+    #
+    # schedule.every(3).seconds.do(job)
+    #
+    # while True:
+    #     schedule.run_pending()
+    #     time.sleep(1)
