@@ -3,12 +3,13 @@ import os
 from django.http import HttpRequest, HttpResponse
 from dotenv import load_dotenv
 from .models import *
-import schedule
-import time
-import datetime
 from pprint import pprint
+from .tasks import my_task
+from datetime import datetime
+import re
 
 load_dotenv()
+my_task()
 
 TG_BASE_URL = "https://api.telegram.org/bot"
 GEO_URL = ("https://geocoding-api.open-meteo.com/v1/search?name=")
@@ -46,7 +47,6 @@ class TelegramHandler:
             self.user = User(**data.get('from'))
             self.text = data.get('data')
             self.on_callback()
-            self.time_handler()
 
     def on_callback(self):
         if self.text == "list_phone":
@@ -63,12 +63,12 @@ class TelegramHandler:
             self.print_del_phone()
         elif self.text == "mistake":
             self.send_message("Biggest mistake in your life")
-        elif self.text == "task_yes":
-            self.send_message("Great! You can upload it now!")
-        elif self.text == "task_no":
-            self.print_time_handler()
         elif self.text == "go_back":
             self.start_message_and_keyboard()
+        elif self.text == 'add_task':
+            self.task_handler()
+        elif self.text == 'del_task':
+            self.delete_task()
 
     def send_message(self, text):
         data = {
@@ -100,27 +100,46 @@ class TelegramHandler:
 
         if TelegramHandler.state == 'task' and TelegramHandler.state_user_id == self.user.id:
             self.task_handler()
+            TelegramHandler.state = 'second_task'
+
+        if TelegramHandler.state == 'second_task' and TelegramHandler.state_user_id == self.user.id:
+            self.validate_task_handler()
             TelegramHandler.state = None
             return
 
         if self.text == "/start":
             self.start_message_and_keyboard()
+        elif self.text == "/commands":
+            self.commands()
         elif self.text == "Weather" or self.text == "weather":
             TelegramHandler.state = 'weather'
             TelegramHandler.state_user_id = self.user.id
             self.print_weather_handler()
-        elif self.text == "Landing page" or self.text == "landing page":
+        elif self.text == "Landing page" or self.text == "landing page" or self.text == "/landingpage":
             self.show_landing()
         elif self.text == "Phonebook" or self.text == "phonebook":
             self.my_phonebook()
-        elif self.text == "My tasks" or self.text == "my tasks":
+        elif self.text == "My tasks" or self.text == "my tasks" or self.text == "/mytasks":
             TelegramHandler.state = 'task'
             TelegramHandler.state_user_id = self.user.id
             self.print_task_handler()
-        elif self.text == "Exchange rate" or self.text == "exchange rate":
+        elif self.text == "Exchange rate" or self.text == "exchange rate" or self.text == "/exchangerate":
             self.currency_handler()
         else:
             self.send_message("Sorry, i can't understand you.")
+
+    def commands(self):
+        command_list = [
+            {'command': '/weather', 'description': 'Get weather information'},
+            {'command': '/landingpage', 'description': 'Show landing page'},
+            {'command': '/phonebook', 'description': 'Access the phonebook'},
+            {'command': '/mytasks', 'description': 'Manage your tasks'},
+            {'command': '/exchangerate', 'description': 'Get exchange rates'}
+        ]
+        command_text = "Available commands:\n\n"
+        for command in command_list:
+            command_text += f"{command['command']} - {command['description']}\n"
+        self.send_message(command_text)
 
     def start_message_and_keyboard(self):
         try:
@@ -385,74 +404,75 @@ class TelegramHandler:
         else:
             self.send_message("You don't have any tasks")
 
-        self.send_message("Please add a task\n"
-                          "or enter 'quit' if you don't want to add a new task:")
+        data = {
+            'chat_id': self.user.id,
+            'text': "What we will do now ?",
+            "reply_markup": {
+                "inline_keyboard": [
+                    [
+                        {
+                            "text": "Add task",
+                            "callback_data": "add_task"
+                        },
+                        {
+                            "text": "Del task",
+                            "callback_data": "del_task"
+                        },
+                        {
+                            "text": "Go back",
+                            "callback_data": "go_back"
+                        },
+                    ]
+                ]
+            }
+        }
+
+        requests.post(f'{TG_BASE_URL}{os.getenv("BOT_TOKEN")}/sendMessage', json=data)
 
     def task_handler(self):
         task_text = self.text
         if task_text.lower() == 'quit':
             self.start_message_and_keyboard()
         else:
-            to_do = Task.objects.create(task=task_text, user_id=self.user.id)
-            data = {
-                'chat_id': self.user.id,
-                'text': "Do you want to add any photo? I will send it to you with notification.",
-                "reply_markup": {
-                    "inline_keyboard": [
-                        [
-                            {
-                                "text": "✅Yes",
-                                "callback_data": "task_yes"
-                            },
-                            {
-                                "text": "⛔No",
-                                "callback_data": "task_no"
-                            },
-                        ]
-                    ]
-                }
-            }
-            requests.post(f'{TG_BASE_URL}{os.getenv("BOT_TOKEN")}/sendMessage', json=data)
-            # TODO: разобраться с обработкой фото
+            Task.objects.create(task=task_text, user_id=self.user.id)
+            self.send_message("Task added successfully")
+            self.send_message("Please enter the date and time when you need to be reminded of this task.\nThe input "
+                              "format should be:  Year-month-day Hour:Minute\nFor example: 2023-06-01 20:45\nIf you "
+                              "want to leave, just enter 'quit'")
 
-    def print_time_handler(self):
-        data = {
-            'chat_id': self.user.id,
-            'text': "Please choose date:",
-            "reply_markup": {
-                "inline_keyboard": [
-                    [
-                        {
-                            "text": "Today",
-                            "callback_data": "today"
-                        },
-                        {
-                            "text": "Tomorrow",
-                            "callback_data": "tomorrow"
-                        },
-                        {
-                            "text": "Other day",
-                            "callback_data": "other_day"
-                        },
-                    ]
-                ]
-            }
-        }
-        requests.post(f'{TG_BASE_URL}{os.getenv("BOT_TOKEN")}/sendMessage', json=data)
+    def validate_task_handler(self):  # TODO: input not working
+        datetime_string = self.text
+        pattern = r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$'
+        match = re.match(pattern, datetime_string)
+        if match:
+            self.send_message(f"Great! Notification will be sent on {datetime_string}")
+            last_task = Task.objects.filter(user_id=self.user.id).last()
+            if last_task:
+                last_task.date = datetime.strptime(datetime_string, '%Y-%m-%d %H:%M')
+                last_task.save()
+            else:
+                self.send_message("No tasks found for the user.")
+        else:
+            self.send_message("Sorry, the format of your input is wrong. Please try again.")
+            self.print_task_handler()
 
-    def time_handler(self):
-        if self.text == "today":
-            pass
-        if self.text == "tomorrow":
-            pass
-        if self.text == "other_day":
-            pass
+    def delete_task(self):  # TODO: input not working
+        del_task = self.text
+        if del_task.lower() == "quit":
+            self.print_task_handler()
+            return
 
-    # def job(self):
-    #     self.send_message("hi")
-    #
-    # schedule.every(3).seconds.do(job)
-    #
-    # while True:
-    #     schedule.run_pending()
-    #     time.sleep(1)
+        try:
+            task_erase = Task.objects.get(task=del_task, user__user_id=self.user.id)
+            task_erase.delete()
+            self.send_message("Task deleted!")
+            self.send_message("Here is a UPDATED list of your tasks:")
+            my_tasks = Task.objects.filter(user__user_id=self.user.id)
+            if my_tasks.exists():
+                tasks = [f"{index + 1}. {task.task}" for index, task in enumerate(my_tasks)]
+                tasks_message = "\n\n".join(tasks)
+                self.send_message(tasks_message)
+            else:
+                self.send_message("You don't have any tasks")
+        except Task.DoesNotExist:
+            self.send_message("Task not found!")
