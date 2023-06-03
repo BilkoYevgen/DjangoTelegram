@@ -4,12 +4,10 @@ from django.http import HttpRequest, HttpResponse
 from dotenv import load_dotenv
 from .models import *
 from pprint import pprint
-from .tasks import my_task
 from datetime import datetime
 import re
 
 load_dotenv()
-my_task()
 
 TG_BASE_URL = "https://api.telegram.org/bot"
 GEO_URL = ("https://geocoding-api.open-meteo.com/v1/search?name=")
@@ -31,9 +29,7 @@ class TelegramHandler:
     state_user_id = None
 
     def __init__(self, data):
-        pprint(data)
         json_data = json.loads(data)
-        pprint(json_data)
 
         data = {}
         if json_data.get('message') is not None:
@@ -99,8 +95,9 @@ class TelegramHandler:
             return
 
         if TelegramHandler.state == 'task' and TelegramHandler.state_user_id == self.user.id:
-            self.task_handler()
+            self.task_handler2()
             TelegramHandler.state = 'second_task'
+            return
 
         if TelegramHandler.state == 'second_task' and TelegramHandler.state_user_id == self.user.id:
             self.validate_task_handler()
@@ -110,7 +107,7 @@ class TelegramHandler:
         if self.text == "/start":
             self.start_message_and_keyboard()
         elif self.text == "/commands":
-            self.commands()
+            self.send_commands_list()
         elif self.text == "Weather" or self.text == "weather":
             TelegramHandler.state = 'weather'
             TelegramHandler.state_user_id = self.user.id
@@ -119,7 +116,7 @@ class TelegramHandler:
             self.show_landing()
         elif self.text == "Phonebook" or self.text == "phonebook":
             self.my_phonebook()
-        elif self.text == "My tasks" or self.text == "my tasks" or self.text == "/mytasks":
+        elif self.text.lower() in ["my tasks", "/mytasks"]:
             TelegramHandler.state = 'task'
             TelegramHandler.state_user_id = self.user.id
             self.print_task_handler()
@@ -128,7 +125,7 @@ class TelegramHandler:
         else:
             self.send_message("Sorry, i can't understand you.")
 
-    def commands(self):
+    def send_commands_list(self):
         command_list = [
             {'command': '/weather', 'description': 'Get weather information'},
             {'command': '/landingpage', 'description': 'Show landing page'},
@@ -430,17 +427,21 @@ class TelegramHandler:
         requests.post(f'{TG_BASE_URL}{os.getenv("BOT_TOKEN")}/sendMessage', json=data)
 
     def task_handler(self):
+        self.send_message("Please enter your task here:")
+
+    def task_handler2(self):
         task_text = self.text
         if task_text.lower() == 'quit':
             self.start_message_and_keyboard()
         else:
-            Task.objects.create(task=task_text, user_id=self.user.id)
+            id = Task.objects.create(task=task_text, user_id=self.user.id).id
+
             self.send_message("Task added successfully")
             self.send_message("Please enter the date and time when you need to be reminded of this task.\nThe input "
                               "format should be:  Year-month-day Hour:Minute\nFor example: 2023-06-01 20:45\nIf you "
                               "want to leave, just enter 'quit'")
 
-    def validate_task_handler(self):  # TODO: input not working
+    def validate_task_handler(self):
         datetime_string = self.text
         pattern = r'^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$'
         match = re.match(pattern, datetime_string)

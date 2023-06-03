@@ -12,8 +12,8 @@ app.autodiscover_tasks()
 
 app.conf.beat_schedule = {
     'check_db_every-minute': {
-        'task': 'my_task',
-        'schedule': 60.0,
+        'task': 'bot.tasks.process_tasks',
+        'schedule': 20.0,
         'args': (),
         'kwargs': {},
     },
