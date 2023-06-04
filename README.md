@@ -22,14 +22,20 @@ The task_list_and_buttons method displays a list of tasks associated with the us
 
 The send_commands_list method sends a message to the user with a list of available commands and their descriptions.
 
-<br>
+
 
 2.)   List of commands:
+
 /weather - Get weather information
+
 /landingpage - Show landing page
+
 /phonebook - Access the phonebook
+
 /mytasks - Manage your tasks
+
 /exchangerate - Get exchange rates
+
 
 3.) Landing page: 
 https://bilkoyevgen.github.io/
