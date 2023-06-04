@@ -1,0 +1,82 @@
+version: "3.8"
+
+services:
+  web:
+    image: bilkoyevgen/django:latest
+    command: gunicorn --bind :8000 --workers 1 -t 60 DjangoTelegram.wsgi:application
+    restart: always
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    env_file:
+      - .env
+    networks:
+      - broker_network
+      - nginx_network
+      - database_network
+
+  nginx:
+    build: ./nginx
+    ports:
+      - "80:80"
+    networks:
+      - nginx_network
+    depends_on:
+      - web
+
+  
+  db:
+    image: postgres:latest
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    env_file:
+      - .env
+    networks:
+      - database_network
+
+  redis:
+    image: redis:latest
+    networks:
+      - broker_network
+    volumes:
+      - broker_data:/data
+
+  celery_worker:
+    image: bilkoyevgen/django:latest
+    command: celery -A DjangoTelegram worker
+    restart: always
+    depends_on:
+      - db
+    env_file:
+      - .env
+    networks:
+      - broker_network
+      - database_network
+
+  celery_beat:
+    image: bilkoyevgen/django:latest
+    command: celery -A DjangoTelegram beat
+    restart: always
+    depends_on:
+      - db
+    env_file:
+      - .env
+    networks:
+      - broker_network
+
+networks:
+  broker_network:
+    name: broker_network
+    driver: bridge
+  nginx_network:
+    name: nginx_network
+    driver: bridge
+  database_network:
+    name: database_network
+    driver: bridge
+
+
+volumes:
+  postgres_data:
+  broker_data:
