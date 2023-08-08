@@ -6,6 +6,10 @@ from .models import *
 from pprint import pprint
 from datetime import datetime
 import re
+import sys
+
+sys.stdin.reconfigure(encoding="utf-8")
+sys.stdout.reconfigure(encoding="utf-8")
 
 load_dotenv()
 

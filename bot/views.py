@@ -10,9 +10,13 @@ from .models import TgUser
 @csrf_exempt
 def index(request):
     if request.method == 'POST':
-        handler = TelegramHandler(request.body.decode('utf-8'))
+        try:
+            decoded_body = request.body.decode('utf-8')
+            print(decoded_body)
+            TelegramHandler(decoded_body)
+        except UnicodeEncodeError as e:
+            print("UnicodeEncodeError:")
         return HttpResponse('Hi')
 
     if request.method == 'GET':
         return HttpResponse('Hi')
-
